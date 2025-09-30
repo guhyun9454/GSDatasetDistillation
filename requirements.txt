@@ -15,9 +15,6 @@ scipy
 seaborn==0.13.2
 setuptools==75.8.0
 sympy==1.13.1
-torch==2.5.1
-torchaudio==2.5.1
-torchvision==0.20.1
 tqdm==4.67.1
 vector-quantize-pytorch==1.21.9
 wandb==0.19.11
