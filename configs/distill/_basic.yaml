@@ -1,0 +1,54 @@
+defaults:
+  - _self_
+
+eval_ddp: false
+
+dataset: CIFAR10
+subset: imagenette  # Only used when dataset is imagenet
+model: ConvNet
+ipc: 1  # image(s) per class
+eval_mode: S  # check utils.py for more info
+num_eval: 5  # how many networks to evaluate on
+eval_it: 500  # how often to evaluate
+epoch_eval_train: 1000  # epochs to train a model with synthetic data
+Iteration: 15000  # how many distillation steps to perform
+lr_init: 0.01  # how to init lr (alpha)
+batch_real: 256  # batch size for real data
+batch_train: 256  # batch size for training networks
+dsa: "True"  # whether to use differentiable Siamese augmentation
+dsa_strategy: color_crop_cutout_flip_scale_rotate  # augmentation strategy
+data_path: ../data  # dataset path
+buffer_path: ../buffers  # buffer path
+zca: false  # do ZCA whitening
+load_all: false  # only use if you can fit all expert trajectories into RAM
+no_aug: false  # turn off diff aug during distillation
+max_files: null  # number of expert files to read (None unless doing ablations)
+max_experts: null  # number of experts to read per file (None unless doing ablations)
+force_save: false  # save images for 50ipc
+
+### Basic ###
+seed: 0
+sh_file: null
+FLAG: ""
+save_path: ./results
+
+syn_steps: null
+expert_epochs: null
+max_start_epoch: null
+lr_lr: null
+lr_teacher: null
+
+batch_syn: null
+dipc: 0
+res: null
+
+### DDiF ###
+dim_in: null
+num_layers: null
+layer_size: null
+dim_out: null
+w0_initial: null
+w0: null
+lr_nf: null
+epochs_init: 5000
+lr_nf_init: 0.0005

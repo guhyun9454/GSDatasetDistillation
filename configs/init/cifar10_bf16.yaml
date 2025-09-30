@@ -1,0 +1,75 @@
+defaults:
+  - _self_
+
+# number of gaussian per image, should satisfy: ipc * resolution^2 * 3 = gpc * max_num_points * store_per_gaussian(8)
+ipc: 1
+gpc: 16
+init_num_points: 21
+max_num_points: 21
+version: "base"
+eps: 1e-5
+batch_size: 160
+
+dataset:
+  name: cifar10
+  dataset_path: ./store/dataset/${dataset.name}
+  subset: null                     # e.g., "imagenet100"
+  resolution: 32
+
+  ipc: ${ipc}                         # images per class
+  gpc: ${gpc}                        # gaussian splats per class
+
+gaussian:
+  use_opacity: true
+  batch_size: ${batch_size}
+  num_points: ${init_num_points}
+  H: ${dataset.resolution}
+  W: ${dataset.resolution}
+  BLOCK_W: 16
+  BLOCK_H: 16
+  eps: ${eps}
+  single_gaussian_bytes: 9
+  precision: bf16
+
+strategy:
+  max_num_points: ${max_num_points}
+  eps: ${eps}
+
+main:
+  allow_mixed_classes: true
+  batch_size: ${batch_size}
+  max_tasks_per_gpu: 5
+  seed: 0
+
+  class_idx_begin: 0
+  class_idx_end: -1
+
+  silent: false
+  lazy: false
+
+lr: 0.1
+
+train:
+  version: ${version}
+  device: "cuda:0"
+  gs_type: GaussianImage_Cholesky
+
+  steps_scaler: 1.0
+  loss_type: "L2"  # ["L2", "L1"]
+  opt_type: "adam" # ["adam", "adan"]
+  lr:
+    xy: ${lr}
+    cholesky: ${lr}
+    features: ${lr}
+    opacity: ${lr}
+  
+  max_steps: 50000
+  save_img_steps: 10000
+  debug_log_steps: 1000000
+
+init_strategy:
+  sample_type: "random"
+
+hydra:
+  run:
+    dir: ./store/init/quant/${dataset.name}_${dataset.resolution}/ipc${dataset.ipc}/${train.gs_type}_${train.max_steps}_${strategy.max_num_points}_${dataset.gpc}_${version}_${gaussian.precision}

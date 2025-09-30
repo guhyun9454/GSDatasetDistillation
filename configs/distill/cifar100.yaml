@@ -1,0 +1,80 @@
+defaults:
+  - _basic
+  - _self_
+
+use_clamp: true
+
+boundary_loss_type: "log"
+boundary_loss_lambda: 0.1
+
+num_points: 85
+batch_size: 8000
+ipc: 10
+gpc: 80
+batch_syn: 312    # 0 means no sampling (use entire synthetic dataset)
+lr: 1e-3
+
+
+init_num_points: ${num_points}
+max_num_points: ${num_points}
+version: "base"
+max_start_epoch: 30
+
+gs_version: base
+clear_memory: false
+
+eps: 1e-5
+
+zca: true
+
+workers: 8
+dataset: cifar100
+subset: null
+res: 32
+model: ConvNetD3
+eval_mode: S
+data_path: ./store/dataset/${dataset}/
+buffer_path: ./store/buffer
+
+num_eval: 1
+
+dipc: 0           # 0 means utilizing entire allowed budget
+lr_nf: 1e-4
+load_all: true
+
+gs_type: GaussianImage_Cholesky_Batch
+gs_opt: adam
+gs_dir: ./store/init/quant/${dataset}_${res}/ipc${ipc}/GaussianImage_Cholesky_50000_${max_num_points}_${gpc}_fix_alias_${gaussian.precision}
+
+gaussian:
+  use_opacity: true
+  batch_size: ${batch_size}
+  H: ${res}
+  W: ${res}
+  BLOCK_W: 16
+  BLOCK_H: 16
+  num_points: ${init_num_points}
+  eps: ${eps}
+  single_gaussian_bytes: 9
+  precision: bf16
+
+strategy:
+  max_num_points: ${max_num_points}
+  eps: ${eps}
+
+
+lr_gs:
+  xy: ${lr}
+  cholesky: ${lr}
+  features: ${lr}
+  opacity: ${lr}
+
+scheduler_gs:
+  type: null
+  cosine_T_max: 1000
+
+suffix: fix_alias_quant_double_${gaussian.precision}
+
+hydra:
+  run:
+    dir: ./store/distill/quant/${dataset}_${res}/ipc${ipc}/gpc${gpc}_${version}_${suffix}${now:%Y%m%d_%H%M%S}

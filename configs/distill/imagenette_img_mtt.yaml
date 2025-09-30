@@ -1,0 +1,62 @@
+defaults:
+  - _basic
+  - _self_
+
+
+version: "img"
+min_start_epoch: 0
+max_start_epoch: 30
+
+clear_memory: false
+
+eps: 1e-5
+
+workers: 8
+dataset: imagenet
+subset: imagenette
+res: 128
+model: ConvNetD5
+ipc: 1
+eval_mode: S
+data_path: ./store/dataset/${subset}/
+buffer_path: ./store/buffer
+
+num_eval: 1
+
+batch_syn: 0    # 0 means no sampling (use entire synthetic dataset)
+load_all: true
+
+mom_img: 0.5
+mom_lr: 0.5
+lr_img: 10000
+
+
+batch_size: 640
+init_num_points: 170
+max_num_points: 170
+gaussian:
+  use_opacity: true
+  batch_size: ${batch_size}
+  H: 128
+  W: 128
+  BLOCK_W: 16
+  BLOCK_H: 16
+  num_points: ${init_num_points}
+  eps: ${eps}
+  single_gaussian_bytes: 9
+  precision: bf16
+gpc: 64
+gs_type: GaussianImage_Cholesky_Batch
+gs_opt: adam
+gs_dir: ./store/init/quant/${dataset}_${subset}_${res}/ipc${ipc}/GaussianImage_Cholesky_50000_${max_num_points}_${gpc}_fix_alias_${gaussian.precision}
+
+scheduler_gs:
+  type: null
+  cosine_T_max: 1000
+
+
+suffix: ""
+
+hydra:
+  run:
+    dir: ./store/distill/img/${dataset}_${subset}_${res}/ipc${ipc}/img_${version}_${suffix}${now:%Y%m%d_%H%M%S}

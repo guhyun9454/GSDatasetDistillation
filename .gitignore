@@ -1,0 +1,9 @@
+__pycache__
+**/wandb
+**/tmp
+tmp
+**/.ipynb_checkpoints
+store
+tmp.ipynb
+.pytest_cache
+store_local/**

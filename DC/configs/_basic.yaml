@@ -1,0 +1,43 @@
+defaults:
+  - _self_
+
+### Dataset & Model ###
+method: DC  # DC / DSA
+dataset: CIFAR10
+model: ConvNet
+ipc: 1  # image(s) per class
+eval_mode: S  # S: same as training model, M: multi-arch, W: width, D: depth, A: activation, P: pooling, N: norm
+num_exp: 1  # number of experiments
+num_eval: 1  # number of evaluating randomly initialized models
+epoch_eval_train: 300  # epochs to train a model with synthetic data
+Iteration: 1000  # training iterations
+lr_net: 0.01  # learning rate for updating network parameters
+batch_real: 128  # batch size for real data
+batch_train: 128  # batch size for training networks
+dsa_strategy: color_crop_cutout_flip_scale_rotate  # differentiable Siamese augmentation strategy
+data_path: ../data  # dataset path
+dis_metric: ours  # distance metric
+
+### Basic ###
+seed: 0
+sh_file: null
+FLAG: ""
+save_path: ./results
+
+batch_syn: null
+dipc: 0
+res: 128
+
+subset: imagenette  # Only used when dataset=ImageNet
+zca: false  # do ZCA whitening
+
+### DDiF ###
+dim_in: null
+num_layers: null
+layer_size: null
+dim_out: null
+w0_initial: null
+w0: null
+lr_nf: null
+epochs_init: 5000
+lr_nf_init: 0.0005
