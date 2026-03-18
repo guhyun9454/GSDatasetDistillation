@@ -36,7 +36,7 @@ Extensive experiments demonstrate that GSDD achieves state-of-the-art or highly 
 ## Status & TODO
 
 - [x] Release core GSDD codebase.
-- [ ] Provide expanded documentation and walkthroughs.
+- [ ] Provide code for video dataset distillation.
 
 ## Installation
 
