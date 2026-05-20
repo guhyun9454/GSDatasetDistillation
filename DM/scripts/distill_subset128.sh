@@ -22,28 +22,8 @@ export CUDA_VISIBLE_DEVICES=${GPU_IDS}
 export NCCL_IB_DISABLE=1
 export PYTHONHASHSEED=0
 
-lock_gpu() {
-  for id in ${GPU_IDS//,/ }; do
-    echo "Locking GPU $id"
-    sudo nvidia-smi -i "$id" -c EXCLUSIVE_PROCESS
-  done
-}
-unlock_gpu() {
-  for id in ${GPU_IDS//,/ }; do
-    for s in {1..5}; do
-      if sudo nvidia-smi -i "$id" --query-compute-apps=pid \
-           --format=csv,noheader | grep -q '[0-9]'; then
-        sleep 1
-      else
-        break
-      fi
-    done
-    sudo nvidia-smi -i "$id" -c DEFAULT
-  done
-}
-trap unlock_gpu EXIT INT TERM
-
-lock_gpu
+# GPU exclusive-mode locking removed: on Slurm clusters `--gres=gpu:1` already
+# isolates the allocated GPU, and `sudo nvidia-smi` is not permitted for users.
 
 
 # note batch_train=128 and batch_real=256, could be scaled up if more GPU memory is available
