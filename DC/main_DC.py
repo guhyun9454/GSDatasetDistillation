@@ -421,12 +421,18 @@ def main(args):
                             module.eval() # fix mu and sigma of every BatchNorm layer
 
                 ''' update synthetic data '''
-                loss = torch.tensor(0.0).to(args.device)
-                # Render the full synthetic set once per outer step and slice per class.
-                # Each class only uses its own slice, so a single render is gradient-
-                # equivalent to re-rendering inside the loop while avoiding holding
-                # num_classes redundant render graphs at once (fixes 24GB OOM).
+                # Memory-efficient gradient matching for 24 GB GPUs.
+                # Render the synthetic set once, then for each class take d(loss_c)/d(render)
+                # through a detached proxy so each class's (second-order) network graph is
+                # freed immediately. The accumulated image-space gradient is backpropped
+                # through the single render graph at the end. This is mathematically identical
+                # to summing the per-class match losses and calling one backward, but holds
+                # only one class graph at a time instead of num_classes (lets batch_syn=0 fit
+                # in 24 GB). Assumes the GradScaler is disabled (true for bf16/fp32).
                 img_syn_all = gs_model()["render"]
+                img_syn_proxy = img_syn_all.detach().requires_grad_(True)
+                syn_grad_accum = torch.zeros_like(img_syn_proxy)
+                loss = 0.0
                 for c in range(num_classes):
                     img_real = get_images(images_all, indices_class, c, args.batch_real)
                     lab_real = torch.ones((img_real.shape[0],), device=args.device, dtype=torch.long) * c
@@ -437,7 +443,7 @@ def main(args):
                     else:
                         indices = range(c * args.gpc, (c + 1) * args.gpc)
 
-                    img_syn = img_syn_all[indices]
+                    img_syn = img_syn_proxy[indices]
                     lab_syn = syn_labels[indices]
 
                     if args.dsa:
@@ -454,16 +460,21 @@ def main(args):
                     loss_syn = criterion(output_syn, lab_syn)
                     gw_syn = torch.autograd.grad(loss_syn, net_parameters, create_graph=True)
 
-                    loss += match_loss(gw_syn, gw_real, args)
+                    loss_c = match_loss(gw_syn, gw_real, args)
+                    syn_grad_accum += torch.autograd.grad(loss_c, img_syn_proxy, retain_graph=False)[0]
+                    loss += loss_c.item()
 
-                    
-                    boundary_loss_value = boundary_loss(gs_model.params["xy"])
-                    loss += args.boundary_loss_lambda * boundary_loss_value
-                
                 for name in optimizers:
                     optimizers[name].zero_grad(set_to_none=True)
 
-                scaler.scale(loss).backward()
+                # boundary loss depends on the gaussian positions directly (not through the
+                # render); the original summed it once per class, so keep the num_classes factor.
+                boundary_total = num_classes * args.boundary_loss_lambda * boundary_loss(gs_model.params["xy"])
+
+                img_syn_all.backward(syn_grad_accum)
+                boundary_total.backward()
+                loss += boundary_total.item()
+
                 for name in optimizers:
                     scaler.unscale_(optimizers[name])
                 strategy.step_pre_backward(it)
@@ -480,7 +491,7 @@ def main(args):
                     gs_model.clamp()
 
                 strategy.step_post_backward(it)
-                loss_avg += loss.item()
+                loss_avg += loss
 
                 if ol == args.outer_loop - 1:
                     break
