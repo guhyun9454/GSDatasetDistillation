@@ -422,6 +422,11 @@ def main(args):
 
                 ''' update synthetic data '''
                 loss = torch.tensor(0.0).to(args.device)
+                # Render the full synthetic set once per outer step and slice per class.
+                # Each class only uses its own slice, so a single render is gradient-
+                # equivalent to re-rendering inside the loop while avoiding holding
+                # num_classes redundant render graphs at once (fixes 24GB OOM).
+                img_syn_all = gs_model()["render"]
                 for c in range(num_classes):
                     img_real = get_images(images_all, indices_class, c, args.batch_real)
                     lab_real = torch.ones((img_real.shape[0],), device=args.device, dtype=torch.long) * c
@@ -432,9 +437,6 @@ def main(args):
                     else:
                         indices = range(c * args.gpc, (c + 1) * args.gpc)
 
-                    # img_syn, lab_syn = synset.get(indices=indices)
-
-                    img_syn_all = gs_model()["render"]
                     img_syn = img_syn_all[indices]
                     lab_syn = syn_labels[indices]
 
