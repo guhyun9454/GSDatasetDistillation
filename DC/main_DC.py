@@ -289,7 +289,8 @@ def main(args):
         syn_labels = torch.tensor(syn_labels, dtype=torch.long, requires_grad=False, device=device).view(-1) # [0,0,0, 1,1,1, ..., 9,9,9]
         gs_model, sample_index = get_initialized_gs_batch(num_classes, args.gaussian.batch_size, args.gs_dir, args.gs_type, args.gaussian, device=device, epochs=None)
         gs_model.requires_grad_(True)
-        methods = ["forward", "forward_subset", "crop_forward_loop", "crop_forward_padding"]
+        methods = [m for m in ["forward", "forward_subset", "crop_forward_loop", "crop_forward_padding"]
+                   if callable(getattr(gs_model, m, None))]
         hook_handle = attach_output_transform_to_methods(
             gs_model, train_transform, methods, key="render"
         )
