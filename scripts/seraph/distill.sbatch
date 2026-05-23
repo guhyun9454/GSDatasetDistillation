@@ -19,7 +19,9 @@
 #SBATCH --job-name=gd
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --partition=batch_ugrad
-#SBATCH --gres=gpu:4               # paper batch needs multi-GPU; see MULTI-GPU note
+#SBATCH --gres=gpu:4               # DEFAULT for DM; OVERRIDE per objective at submit:
+                                   #   DC -> sbatch --gres=gpu:1 (single-GPU, micro-batched)
+                                   #   DM -> sbatch --gres=gpu:4 (DataParallel)
 #SBATCH --cpus-per-task=16
 #SBATCH --time=3-00:00:00          # batch_ugrad is infinite; explicit 3d cap
 # Cluster submit policy REQUIRES pinning a v/g node via `-w` at submit time
@@ -57,22 +59,21 @@ if [ ! -d "$GS_DIR" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# MULTI-GPU status (Phase 2):
-#   DM  -> main_DM.py already wraps the embedding net in nn.DataParallel
-#          (auto-activates when device_count>1). Paper batch_real=1024 is sharded
-#          across the 4 GPUs. READY.
-#   DC  -> main_DC.py matching loop is second-order (create_graph=True) and is
-#          NOT yet multi-GPU. On a single 24GB GPU the paper batch (real=720,
-#          gpc=200) will OOM. Do not expect DC to use >1 GPU until the Phase 2
-#          code change lands. See docs/gsdd/phase2_multigpu_design.md.
+# MULTI-GPU status (Phase 2 — RESOLVED, see docs/gsdd/phase2_multigpu_design.md):
+#   DC  -> SINGLE GPU. Real forward micro-batched (batch_real_micro=128); peak
+#          14.84 GiB at the paper config, gradient exact (fp64-verified). Submit
+#          with --gres=gpu:1 so 4 DC subsets run concurrently under QOS-4.
+#   DM  -> main_DM.py wraps the embed net in nn.DataParallel; submit --gres=gpu:4
+#          (batch_real=1024 sharded). READY.
 # ---------------------------------------------------------------------------
 
 if [ "$OBJ" = "DC" ]; then
-  echo "[distill] DC subset=$SUBSET gpc=$GPC np=$NP batch_real=720 Iter=5000"
+  echo "[distill] DC subset=$SUBSET gpc=$GPC np=$NP batch_real=720 micro=128 Iter=5000"
   python DC/main_DC.py --config-name imagenette \
     subset=$SUBSET gpc=$GPC num_points=$NP \
-    batch_real=720 batch_syn=0 Iteration=5000 eval_it=500 \
+    batch_real=720 batch_real_micro=128 batch_syn=0 Iteration=5000 eval_it=500 \
     ipc=$IPC res=$RES model=ConvNetD5 zca=false seed=$SEED \
+    ${WANDB:+wandb=true wandb_project=GSDD-DC} \
     gs_dir=$GS_DIR
 elif [ "$OBJ" = "DM" ]; then
   echo "[distill] DM subset=$SUBSET gpc=$GPC np=$NP batch_real=1024 Iter=20000"
@@ -80,6 +81,7 @@ elif [ "$OBJ" = "DM" ]; then
     subset=$SUBSET gpc=$GPC num_points=$NP \
     batch_real=1024 batch_syn=0 Iteration=20000 eval_it=2000 \
     ipc=$IPC res=$RES model=ConvNetD5 zca=false seed=$SEED \
+    ${WANDB:+wandb=true wandb_project=GSDD-DM} \
     gs_dir=$GS_DIR
 else
   echo "ERROR: OBJ must be DC or DM (got '$OBJ')"; exit 1
