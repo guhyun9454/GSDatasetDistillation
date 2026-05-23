@@ -13,8 +13,11 @@ Checks BOTH, against a full-batch-gw_real reference:
   (ii) render-param grads after img_syn_all.backward()     (main_DC.py)
 
 Real config: DSA on, create_graph=True for gw_syn, real match_loss / DiffAugment
-/ ConvNet. Tiny sizes (gpc=8, 2 classes, batch_real=24, micro=8, 5 iters).
-Requires CUDA.
+/ ConvNet. Tiny sizes (gpc=8, 2 classes, batch_real=24/25, micro=8, 5 iters).
+Requires CUDA. Runs in float64: the micro-batched gw_real is mathematically exact,
+but in fp32 a full-batch forward and chunked forwards differ ~1e-3 from cuDNN
+reduction-order non-associativity (amplified by the nonlinear matching loss). fp64
+collapses that to ~1e-16 so the gate tests the math, not float accumulation order.
 
 Run on the cluster, e.g.:
   srun --partition=debug_ugrad --gres=gpu:1 --time=0:30:00 --pty \
@@ -43,18 +46,18 @@ class Args:
     dsa = True
 
 
-def make_render_params(num_classes, gpc, channel, im_size, device, seed=0):
+def make_render_params(num_classes, gpc, channel, im_size, device, seed=0, dtype=torch.float64):
     """Leaf parameter playing the role of the gaussian params; a fixed random
     linear map turns it into the 'render' (img_syn_all). Differentiable so the
     second backward to the leaf is exercised, like gs_model."""
     g = torch.Generator(device="cpu").manual_seed(seed)
     n_imgs = num_classes * gpc
     latent_dim = 32
-    params = torch.randn(n_imgs, latent_dim, generator=g, device="cpu").to(device)
+    params = torch.randn(n_imgs, latent_dim, generator=g, device="cpu").to(device).to(dtype)
     params.requires_grad_(True)
     out_dim = channel * im_size[0] * im_size[1]
-    W = torch.randn(latent_dim, out_dim, generator=g, device="cpu").to(device) * 0.05
-    b = torch.randn(out_dim, generator=g, device="cpu").to(device) * 0.05
+    W = (torch.randn(latent_dim, out_dim, generator=g, device="cpu").to(device).to(dtype)) * 0.05
+    b = (torch.randn(out_dim, generator=g, device="cpu").to(device).to(dtype)) * 0.05
 
     def render(p):
         x = torch.tanh(p @ W + b)
@@ -133,20 +136,28 @@ def main():
     r_micro = 8  # micro-batch size for the new path; 24 is not divisible-clean -> tests remainder too via 25
     n_iters = 5
 
+    # Run everything in float64. The micro-batched gw_real is MATHEMATICALLY exact
+    # (mean-CE grad = sum of chunk-fraction-weighted micro grads), but in fp32 a
+    # batch-of-N forward and chunked forwards differ by ~1e-3 purely from cuDNN
+    # reduction-order non-associativity, which the nonlinear gradient-matching loss
+    # then amplifies. fp64 collapses that fp noise to ~1e-16 so the test asserts the
+    # actual math, not cuDNN's float accumulation. Production runs fp32, where this
+    # ~1e-3 drift is far below the variance DSA already injects per iteration.
+    dtype = torch.float64
     ok = True
     for it in range(n_iters):
         torch.manual_seed(1000 + it)
         np.random.seed(1000 + it)
 
-        net = get_network("ConvNet", channel, num_classes, im_size).to(device)
+        net = get_network("ConvNet", channel, num_classes, im_size).to(device).to(dtype)
         net.eval()  # freeze norm stats so both runs are deterministic and identical
 
-        render_params, render = make_render_params(num_classes, gpc, channel, im_size, device, seed=it)
+        render_params, render = make_render_params(num_classes, gpc, channel, im_size, device, seed=it, dtype=dtype)
         syn_labels = torch.cat([torch.full((gpc,), c, dtype=torch.long, device=device)
                                 for c in range(num_classes)])
         # use batch_real not divisible by r_micro on odd iters to exercise the remainder chunk
         br = batch_real + (1 if it % 2 == 1 else 0)
-        real_images = [torch.randn(br, channel, *im_size, device=device)
+        real_images = [torch.randn(br, channel, *im_size, device=device).to(dtype)
                        for _ in range(num_classes)]
         dsa_seeds = [int(np.random.randint(0, 100000)) for _ in range(num_classes)]
 
@@ -161,8 +172,8 @@ def main():
             args, net_ref, params_ref, render, real_images, syn_labels,
             num_classes, gpc, br, dsa_params, dsa_seeds, r_micro=0)  # full batch
 
-        img_close = torch.allclose(new_img_grad, ref_img_grad, atol=1e-4, rtol=1e-3)
-        param_close = torch.allclose(new_param_grad, ref_param_grad, atol=1e-4, rtol=1e-3)
+        img_close = torch.allclose(new_img_grad, ref_img_grad, atol=1e-9, rtol=1e-7)
+        param_close = torch.allclose(new_param_grad, ref_param_grad, atol=1e-9, rtol=1e-7)
         img_maxerr = (new_img_grad - ref_img_grad).abs().max().item()
         param_maxerr = (new_param_grad - ref_param_grad).abs().max().item()
         print(f"[iter {it}] br={br} micro={r_micro} | img_grad allclose={img_close} "
