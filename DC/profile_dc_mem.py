@@ -72,16 +72,14 @@ def one_iter(args, net, render_params, real_images, syn_labels, num_classes,
     img_syn_all.backward(syn_grad_accum)
 
 
-def profile(use_checkpoint, n_warmup=1, n_meas=3):
+def profile(use_checkpoint, n_warmup=1, n_meas=3, gpc=200, batch_real=720):
     args = Args()
     dsa_params = ParamDiffAug()
     device = "cuda"
 
     num_classes = 10
-    gpc = 200
     channel = 3
     im_size = (128, 128)
-    batch_real = 720
 
     net = get_network("ConvNetD5", channel, num_classes, im_size).to(device)
     net.train()
@@ -113,27 +111,25 @@ def profile(use_checkpoint, n_warmup=1, n_meas=3):
 
 
 def main():
-    # Run one path per process (pass 'ckpt' or 'nockpt') so the two measurements
-    # never share a poisoned/fragmented allocator. Default runs both in sequence
-    # with an empty_cache between, but separate processes are preferred.
+    # Usage: profile_dc_mem.py <ckpt|nockpt> [gpc] [batch_real]
+    # Run one path per process so the two measurements never share a poisoned
+    # allocator. Each (gpc, batch_real) point should be its own process.
     assert torch.cuda.is_available(), "profiler requires a GPU"
     mode = sys.argv[1] if len(sys.argv) > 1 else "ckpt"
+    gpc = int(sys.argv[2]) if len(sys.argv) > 2 else 200
+    batch_real = int(sys.argv[3]) if len(sys.argv) > 3 else 720
     name = torch.cuda.get_device_name(0)
     total_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
-    print(f"GPU: {name} ({total_gb:.1f} GiB) | mode={mode}")
-    print("Paper DC config: gpc=200, num_points=54(N/A here), batch_real=720, "
-          "batch_syn=0, imagenette 128x128, ConvNetD5")
     use_ckpt = (mode == "ckpt")
-    label = "checkpointed syn forward (Option A, current main_DC)" if use_ckpt \
-        else "NO checkpoint (baseline / pre-Option-A)"
+    print(f"GPU: {name} ({total_gb:.1f} GiB) | mode={mode} | gpc={gpc} | batch_real={batch_real} "
+          f"| im=128x128 ConvNetD5 batch_syn=0")
     try:
-        peak, dt = profile(use_checkpoint=use_ckpt)
+        peak, dt = profile(use_checkpoint=use_ckpt, gpc=gpc, batch_real=batch_real)
         fits = "FITS" if peak < total_gb else "DOES NOT FIT"
-        print(f"--- {label} ---")
-        print(f"peak GPU mem = {peak:.2f} GiB ({fits} on {total_gb:.0f}GB) | sec/iter = {dt:.2f}s")
+        print(f"RESULT mode={mode} gpc={gpc} batch_real={batch_real}: "
+              f"peak={peak:.2f} GiB ({fits} on {total_gb:.0f}GB) | sec/iter={dt:.2f}s")
     except RuntimeError as e:
-        print(f"--- {label} ---")
-        print(f"OOM/RuntimeError: {e}")
+        print(f"RESULT mode={mode} gpc={gpc} batch_real={batch_real}: OOM -> {e}")
 
 
 if __name__ == "__main__":
