@@ -531,6 +531,11 @@ def main(args):
 
             loss_avg /= (num_classes*args.outer_loop)
 
+            if it == 0 and torch.cuda.is_available():
+                peak_gb = torch.cuda.max_memory_allocated() / 1024**3
+                save_and_print(args.log_path,
+                               '[profile] iter0 peak GPU mem = %.2f GiB' % peak_gb)
+
             if it%10 == 0:
                 save_and_print(args.log_path, '%s iter = %04d, loss = %.4f' % (get_time(), it, loss_avg))
 
