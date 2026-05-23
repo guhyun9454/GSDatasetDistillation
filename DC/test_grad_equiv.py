@@ -121,11 +121,6 @@ def run(args, net, render_params, render, real_images, syn_labels, num_classes,
 def main():
     assert torch.cuda.is_available(), "equivalence gate requires a GPU"
     args = Args()
-    if len(sys.argv) > 1 and sys.argv[1] == "nodsa":
-        args.dsa_strategy = "none"
-        args.dsa = False
-        print(">>> DSA OFF (isolation test)")
-    dsa_params = ParamDiffAug()
     device = "cuda"
 
     num_classes = 2
@@ -143,6 +138,15 @@ def main():
     # then amplifies. fp64 collapses that fp noise to ~1e-16 so the test asserts the
     # actual math, not cuDNN's float accumulation. Production runs fp32, where this
     # ~1e-3 drift is far below the variance DSA already injects per iteration.
+    #
+    # DSA is forced OFF here: it augments the full img_real identically in both the
+    # full-batch and micro-batch paths (the change only chunks the *subsequent*
+    # forward), so it is orthogonal to what we are verifying — and DiffAugment builds
+    # its sampling grids in float32, which is incompatible with the float64 net.
+    args.dsa_strategy = "none"
+    args.dsa = False
+    print(">>> float64, DSA off — verifying the micro-batched gw_real math")
+    dsa_params = ParamDiffAug()
     dtype = torch.float64
     ok = True
     for it in range(n_iters):
