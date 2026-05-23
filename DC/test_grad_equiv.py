@@ -118,6 +118,10 @@ def run(args, net, render_params, render, real_images, syn_labels, num_classes,
 def main():
     assert torch.cuda.is_available(), "equivalence gate requires a GPU"
     args = Args()
+    if len(sys.argv) > 1 and sys.argv[1] == "nodsa":
+        args.dsa_strategy = "none"
+        args.dsa = False
+        print(">>> DSA OFF (isolation test)")
     dsa_params = ParamDiffAug()
     device = "cuda"
 
