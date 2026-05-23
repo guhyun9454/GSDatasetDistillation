@@ -23,6 +23,9 @@
                                    #   DC -> sbatch --gres=gpu:1 (single-GPU, micro-batched)
                                    #   DM -> sbatch --gres=gpu:4 (DataParallel)
 #SBATCH --cpus-per-task=16
+#SBATCH --mem=64G                  # REQUIRED: cluster DefMemPerCPU=100M → only 1.6G
+                                   # default, but build_tensor_dataset caches the full
+                                   # real set into a CPU tensor (OOM-kills at default).
 #SBATCH --time=3-00:00:00          # batch_ugrad is infinite; explicit 3d cap
 # Cluster submit policy REQUIRES pinning a v/g node via `-w` at submit time
 # (the `-x` high_perf-exclude path is rejected). Pass a free A5000 v-node:
