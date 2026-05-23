@@ -18,7 +18,9 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=1-00:00:00          # batch_ugrad is infinite; explicit 1d cap for init
-#SBATCH --nodelist=ariel-g1        # pick a free A5000 g-node (g1..g5)
+# No --nodelist: batch_ugrad = ariel-v[6-12] (24GB A5000) + k/m/n (high_perf,
+# QOS-blocked via gpu:high_perf=0). Slurm auto-picks a free A5000. Do NOT pin
+# ariel-g* — those are grad-partition nodes, not in batch_ugrad.
 
 set -e
 ulimit -n 65535                    # init_gs.py shares many fds; avoids Errno 24

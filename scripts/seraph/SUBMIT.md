@@ -91,8 +91,11 @@ squeue -u $USER -o '%.10i %.12j %.8T %.10M %R'          # current queue
 
 - Account `ugrad` → partition `batch_ugrad` (TIMELIMIT infinite). `debug_ugrad`
   (4h) for quick smoke tests.
-- A5000 24GB = `ariel-g1..g5` (gpu:8 each, so a 4-GPU job fits on one node). Do
-  **not** target `ariel-k*` (high_perf, QOS-blocked). Update `--nodelist` to a free node.
+- For account `ugrad`, `batch_ugrad` contains `ariel-v[6-12]` (24GB A5000) plus
+  `ariel-k/m/n*` (high_perf, QOS-blocked via `gpu:high_perf=0`). **Do NOT pin
+  `ariel-g*`** — those are grad-partition nodes, not in `batch_ugrad` (pinning
+  one fails with "Requested nodes not in this partition"). The scripts use no
+  `--nodelist`; the QOS auto-restricts to regular A5000 v-nodes.
 - If the QOS GPU cap is still 4, the 12 distill jobs drain a few at a time.
 
 ## 5. Caveats (carry into `docs/gsdd/` + the eventual results)
