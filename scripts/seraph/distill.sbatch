@@ -1,0 +1,83 @@
+#!/bin/bash
+# GSDD paper-faithful distill for one (objective, subset) at IPC=1.
+# Parameterized by OBJ in {DC, DM} and SUBSET in the 6 benchmark subsets.
+#
+# Paper hyperparameters baked in (docs/gsdd/paper_numbers.md):
+#   DC = Table 12: gpc=200, num_points=54, batch_real=720, batch_syn=2000, Iter=5000
+#   DM = Table 10: gpc=200, num_points=54, batch_real=1024, batch_syn=2000, Iter=20000
+# batch_syn=2000 with gpc=200 == "use all 200 syn/class" == batch_syn=0 (the full
+# path), so we pass batch_syn=0 to use the fork's exact per-class grad-accum path.
+#
+# Submit (do NOT submit until ceph paths are final + Phase 2 lands for DC — see SUBMIT.md):
+#   sbatch --export=ALL,OBJ=DM,SUBSET=imagewoof scripts/seraph/distill.sbatch
+#
+# Resource knobs verified 2026-05-23 on ariel (post-migration):
+#   account=ugrad -> batch_ugrad (infinite). 24GB A5000 = ariel-g1..g5 (gpu:8).
+#   Personal QOS qos_guhyun9454_2026+ ; re-verify GPU cap before requesting gpu:4:
+#     sacctmgr -n show qos qos_guhyun9454_2026 format=Name,Flags,MaxTRESPU,GrpTRES
+#
+#SBATCH --job-name=gd
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --partition=batch_ugrad
+#SBATCH --gres=gpu:4               # paper batch needs multi-GPU; see MULTI-GPU note
+#SBATCH --cpus-per-task=16
+#SBATCH --time=3-00:00:00          # batch_ugrad is infinite; explicit 3d cap
+#SBATCH --nodelist=ariel-g1        # 8-GPU A5000 node; 4 GPUs fit. Pick a free g1..g5
+
+set -e
+ulimit -n 65535
+
+export OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8
+export NUMEXPR_NUM_THREADS=8 VECLIB_MAXIMUM_THREADS=8 PYTORCH_NUM_THREADS=8
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export NCCL_IB_DISABLE=1 PYTHONHASHSEED=0
+export CUDA_VISIBLE_DEVICES=0,1,2,3   # use all 4 allocated GPUs
+
+# conda lives on /data (no conda on ceph); the env works regardless of cwd.
+. /data/$USER/anaconda3/etc/profile.d/conda.sh
+conda activate gsdd
+# Canonical repo post-migration is on ceph.
+cd /ceph_data/$USER/g/GSDatasetDistillation
+
+OBJ=${OBJ:?set OBJ=DC or OBJ=DM}
+SUBSET=${SUBSET:-imagenette}
+GPC=${GPC:-200}
+NP=${NP:-54}
+IPC=${IPC:-1}
+RES=128
+SEED=${SEED:-0}
+
+# Init produced by init.sbatch (quant path; the distill configs default to init/dm).
+GS_DIR="store/init/quant/imagenet_${SUBSET}_${RES}/ipc${IPC}/GaussianImage_Cholesky_50000_${NP}_${GPC}_fix_alias_bf16"
+if [ ! -d "$GS_DIR" ]; then
+  echo "ERROR: init dir not found: $GS_DIR  (run init.sbatch for SUBSET=$SUBSET first)"; exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# MULTI-GPU status (Phase 2):
+#   DM  -> main_DM.py already wraps the embedding net in nn.DataParallel
+#          (auto-activates when device_count>1). Paper batch_real=1024 is sharded
+#          across the 4 GPUs. READY.
+#   DC  -> main_DC.py matching loop is second-order (create_graph=True) and is
+#          NOT yet multi-GPU. On a single 24GB GPU the paper batch (real=720,
+#          gpc=200) will OOM. Do not expect DC to use >1 GPU until the Phase 2
+#          code change lands. See docs/gsdd/phase2_multigpu_design.md.
+# ---------------------------------------------------------------------------
+
+if [ "$OBJ" = "DC" ]; then
+  echo "[distill] DC subset=$SUBSET gpc=$GPC np=$NP batch_real=720 Iter=5000"
+  python DC/main_DC.py --config-name imagenette \
+    subset=$SUBSET gpc=$GPC num_points=$NP \
+    batch_real=720 batch_syn=0 Iteration=5000 eval_it=500 \
+    ipc=$IPC res=$RES model=ConvNetD5 zca=false seed=$SEED \
+    gs_dir=$GS_DIR
+elif [ "$OBJ" = "DM" ]; then
+  echo "[distill] DM subset=$SUBSET gpc=$GPC np=$NP batch_real=1024 Iter=20000"
+  python DM/main_DM.py --config-name imagenette128 \
+    subset=$SUBSET gpc=$GPC num_points=$NP \
+    batch_real=1024 batch_syn=0 Iteration=20000 eval_it=2000 \
+    ipc=$IPC res=$RES model=ConvNetD5 zca=false seed=$SEED \
+    gs_dir=$GS_DIR
+else
+  echo "ERROR: OBJ must be DC or DM (got '$OBJ')"; exit 1
+fi
