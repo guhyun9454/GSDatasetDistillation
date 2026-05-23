@@ -22,9 +22,10 @@
 #SBATCH --gres=gpu:4               # paper batch needs multi-GPU; see MULTI-GPU note
 #SBATCH --cpus-per-task=16
 #SBATCH --time=3-00:00:00          # batch_ugrad is infinite; explicit 3d cap
-# Cluster policy requires excluding high_perf nodes. Excluding k/m/n leaves the
-# 24GB A5000 v-nodes (ariel-v[6-12]). Do NOT pin ariel-g* (grad-only).
-#SBATCH --exclude=ariel-m1,ariel-m2,ariel-k1,ariel-k2,ariel-n1
+# Cluster submit policy REQUIRES pinning a v/g node via `-w` at submit time
+# (the `-x` high_perf-exclude path is rejected). Pass a free A5000 v-node:
+#   sbatch -w ariel-v8 --export=ALL,OBJ=DM,SUBSET=... distill.sbatch
+# v-nodes (gpu:8 each) in batch_ugrad = ariel-v[6-12]. Do NOT pin ariel-g*.
 
 set -e
 ulimit -n 65535

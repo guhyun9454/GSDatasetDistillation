@@ -18,10 +18,10 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=1-00:00:00          # batch_ugrad is infinite; explicit 1d cap for init
-# Cluster policy requires excluding high_perf nodes (or pinning v/g with -w).
-# Excluding k/m/n leaves the 24GB A5000 v-nodes (ariel-v[6-12]) in batch_ugrad.
-# Do NOT pin ariel-g* — grad-partition only, not in batch_ugrad.
-#SBATCH --exclude=ariel-m1,ariel-m2,ariel-k1,ariel-k2,ariel-n1
+# Cluster submit policy REQUIRES pinning a v/g node via `-w` at submit time
+# (the `-x` high_perf-exclude path is rejected by the filter). Pass a free 24GB
+# A5000 v-node, e.g.:  sbatch -w ariel-v8 --export=ALL,SUBSET=... init.sbatch
+# v-nodes in batch_ugrad = ariel-v[6-12]. Do NOT pin ariel-g* (grad-only).
 
 set -e
 ulimit -n 65535                    # init_gs.py shares many fds; avoids Errno 24
