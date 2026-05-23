@@ -28,7 +28,6 @@ logging.getLogger('lib.gaussian.gaussianimage_cholesky').setLevel(logging.WARNIN
 import hydra
 import numpy as np
 import torch
-import torch.utils.checkpoint
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from torchvision.utils import save_image
@@ -466,22 +465,29 @@ def main(args):
                         img_real = DiffAugment(img_real, args.dsa_strategy, seed=seed, param=dsa_params)
                         img_syn = DiffAugment(img_syn, args.dsa_strategy, seed=seed, param=dsa_params)
 
-                    output_real = net(img_real)
-                    loss_real = criterion(output_real, lab_real)
-                    gw_real = torch.autograd.grad(loss_real, net_parameters)
-                    gw_real = list((_.detach().clone() for _ in gw_real))
+                    # gw_real is first-order and detached. The cross-entropy mean over
+                    # batch_real images equals the chunk-fraction-weighted sum of
+                    # micro-batch gradients, and each micro-batch's (no-create_graph)
+                    # activation graph frees immediately. Forwarding in micro-batches of
+                    # batch_real_micro therefore bounds the real-forward activation peak
+                    # by the micro size instead of the full batch_real (the dominant 24GB
+                    # term at batch_real=720), while staying mathematically identical to
+                    # the full-batch gw_real. DSA is applied to the full img_real above so
+                    # the augmentation is identical regardless of chunk size.
+                    n_real = img_real.shape[0]
+                    r_micro = args.batch_real_micro if getattr(args, "batch_real_micro", 0) else n_real
+                    gw_real = [torch.zeros_like(p) for p in net_parameters]
+                    for start in range(0, n_real, r_micro):
+                        chunk = slice(start, start + r_micro)
+                        out_chunk = net(img_real[chunk])
+                        loss_chunk = criterion(out_chunk, lab_real[chunk])
+                        g_chunk = torch.autograd.grad(loss_chunk, net_parameters)
+                        weight = out_chunk.shape[0] / n_real
+                        for i, g in enumerate(g_chunk):
+                            gw_real[i] += g.detach() * weight
+                    gw_real = list(_.detach() for _ in gw_real)
 
-                    # Checkpoint the syn forward so its activations are recomputed during the
-                    # second-order backward instead of stored, cutting the dominant memory term.
-                    # BN must be frozen (.eval()) here so recompute reuses fixed running stats.
-                    assert all(
-                        not module.training
-                        for module in net.modules()
-                        if 'BatchNorm' in module._get_name()
-                    ), "BatchNorm must be in eval() before the checkpointed syn forward"
-                    output_syn = torch.utils.checkpoint.checkpoint(
-                        lambda x: net(x), img_syn, use_reentrant=False
-                    )
+                    output_syn = net(img_syn)
                     loss_syn = criterion(output_syn, lab_syn)
                     gw_syn = torch.autograd.grad(loss_syn, net_parameters, create_graph=True)
 

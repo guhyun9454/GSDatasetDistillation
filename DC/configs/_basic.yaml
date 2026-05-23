@@ -13,6 +13,7 @@ epoch_eval_train: 300  # epochs to train a model with synthetic data
 Iteration: 1000  # training iterations
 lr_net: 0.01  # learning rate for updating network parameters
 batch_real: 128  # batch size for real data
+batch_real_micro: 0  # 0 = full batch; >0 micro-batches the (first-order) real forward to bound the 24GB activation peak
 batch_train: 128  # batch size for training networks
 dsa_strategy: color_crop_cutout_flip_scale_rotate  # differentiable Siamese augmentation strategy
 data_path: ../data  # dataset path
