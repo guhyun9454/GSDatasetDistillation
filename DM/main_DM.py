@@ -219,6 +219,14 @@ def main(args):
     set_seed(args.seed)
     args = load_default(args)
 
+    if getattr(args, "wandb", False):
+        import wandb
+        wandb.init(
+            entity=args.wandb_entity,
+            project=args.wandb_project,
+            config=OmegaConf.to_container(args, resolve=True),
+        )
+
     os.makedirs(args.save_path, exist_ok=True)
     os.makedirs(f"{args.save_path}/imgs", exist_ok=True)
 
@@ -359,6 +367,12 @@ def main(args):
                     save_and_print(args.log_path, f"{args.save_path}")
                     save_and_print(args.log_path, f"{it:5d} | Accuracy/{model_eval}: {acc_test_mean}")
                     save_and_print(args.log_path, f"{it:5d} | Max_Accuracy/{model_eval}: {best_acc[model_eval]}")
+                    if getattr(args, "wandb", False):
+                        import wandb
+                        wandb.log({
+                            f"Accuracy/{model_eval}": acc_test_mean,
+                            f"Max_Accuracy/{model_eval}": best_acc[model_eval],
+                        }, step=it)
                     save_and_print(args.log_path, f"{it:5d} | Std/{model_eval}: {acc_test_std}")
                     save_and_print(args.log_path, f"{it:5d} | Max_Std/{model_eval}: {best_std[model_eval]}")
                     del image_syn_eval, label_syn_eval

@@ -28,6 +28,7 @@ logging.getLogger('lib.gaussian.gaussianimage_cholesky').setLevel(logging.WARNIN
 import hydra
 import numpy as np
 import torch
+import torch.utils.checkpoint
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from torchvision.utils import save_image
@@ -210,6 +211,14 @@ def main(args):
     set_seed(args.seed)
     args = load_default(args)
 
+    if getattr(args, "wandb", False):
+        import wandb
+        wandb.init(
+            entity=args.wandb_entity,
+            project=args.wandb_project,
+            config=OmegaConf.to_container(args, resolve=True),
+        )
+
     os.makedirs(args.save_path, exist_ok=True)
     os.makedirs(f"{args.save_path}/imgs", exist_ok=True)
 
@@ -353,6 +362,12 @@ def main(args):
                     save_and_print(args.log_path, f"{args.save_path}")
                     save_and_print(args.log_path, f"{it:5d} | Accuracy/{model_eval}: {acc_test_mean}")
                     save_and_print(args.log_path, f"{it:5d} | Max_Accuracy/{model_eval}: {best_acc[model_eval]}")
+                    if getattr(args, "wandb", False):
+                        import wandb
+                        wandb.log({
+                            f"Accuracy/{model_eval}": acc_test_mean,
+                            f"Max_Accuracy/{model_eval}": best_acc[model_eval],
+                        }, step=it)
                     save_and_print(args.log_path, f"{it:5d} | Std/{model_eval}: {acc_test_std}")
                     save_and_print(args.log_path, f"{it:5d} | Max_Std/{model_eval}: {best_std[model_eval]}")
                     if args.num_eval > 0:
@@ -456,7 +471,17 @@ def main(args):
                     gw_real = torch.autograd.grad(loss_real, net_parameters)
                     gw_real = list((_.detach().clone() for _ in gw_real))
 
-                    output_syn = net(img_syn)
+                    # Checkpoint the syn forward so its activations are recomputed during the
+                    # second-order backward instead of stored, cutting the dominant memory term.
+                    # BN must be frozen (.eval()) here so recompute reuses fixed running stats.
+                    assert all(
+                        not module.training
+                        for module in net.modules()
+                        if 'BatchNorm' in module._get_name()
+                    ), "BatchNorm must be in eval() before the checkpointed syn forward"
+                    output_syn = torch.utils.checkpoint.checkpoint(
+                        lambda x: net(x), img_syn, use_reentrant=False
+                    )
                     loss_syn = criterion(output_syn, lab_syn)
                     gw_syn = torch.autograd.grad(loss_syn, net_parameters, create_graph=True)
 

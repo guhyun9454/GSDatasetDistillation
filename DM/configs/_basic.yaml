@@ -23,6 +23,11 @@ sh_file: null
 FLAG: ""
 save_path: ./results
 
+### wandb (off by default; archived Slurm log remains source of truth) ###
+wandb: false
+wandb_entity: TGwithIU
+wandb_project: GSDD-DM
+
 batch_syn: null
 dipc: 0
 res: 256
