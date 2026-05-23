@@ -22,8 +22,9 @@
 #SBATCH --gres=gpu:4               # paper batch needs multi-GPU; see MULTI-GPU note
 #SBATCH --cpus-per-task=16
 #SBATCH --time=3-00:00:00          # batch_ugrad is infinite; explicit 3d cap
-# No --nodelist: batch_ugrad = ariel-v[6-12] (24GB A5000) + k/m/n (high_perf,
-# QOS-blocked). Slurm auto-picks free A5000(s). Do NOT pin ariel-g* (grad-only).
+# Cluster policy requires excluding high_perf nodes. Excluding k/m/n leaves the
+# 24GB A5000 v-nodes (ariel-v[6-12]). Do NOT pin ariel-g* (grad-only).
+#SBATCH --exclude=ariel-m1,ariel-m2,ariel-k1,ariel-k2,ariel-n1
 
 set -e
 ulimit -n 65535
