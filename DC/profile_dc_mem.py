@@ -113,41 +113,27 @@ def profile(use_checkpoint, n_warmup=1, n_meas=3):
 
 
 def main():
+    # Run one path per process (pass 'ckpt' or 'nockpt') so the two measurements
+    # never share a poisoned/fragmented allocator. Default runs both in sequence
+    # with an empty_cache between, but separate processes are preferred.
     assert torch.cuda.is_available(), "profiler requires a GPU"
+    mode = sys.argv[1] if len(sys.argv) > 1 else "ckpt"
     name = torch.cuda.get_device_name(0)
     total_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
-    print(f"GPU: {name} ({total_gb:.1f} GiB)")
+    print(f"GPU: {name} ({total_gb:.1f} GiB) | mode={mode}")
     print("Paper DC config: gpc=200, num_points=54(N/A here), batch_real=720, "
-          "batch_syn=0, imagenette 128x128, ConvNetD5\n")
-
-    print("--- Option A: gradient-checkpointed syn forward (current main_DC) ---")
+          "batch_syn=0, imagenette 128x128, ConvNetD5")
+    use_ckpt = (mode == "ckpt")
+    label = "checkpointed syn forward (Option A, current main_DC)" if use_ckpt \
+        else "NO checkpoint (baseline / pre-Option-A)"
     try:
-        peak_a, dt_a = profile(use_checkpoint=True)
-        print(f"peak GPU mem = {peak_a:.2f} GiB | sec/iter = {dt_a:.2f}s\n")
+        peak, dt = profile(use_checkpoint=use_ckpt)
+        fits = "FITS" if peak < total_gb else "DOES NOT FIT"
+        print(f"--- {label} ---")
+        print(f"peak GPU mem = {peak:.2f} GiB ({fits} on {total_gb:.0f}GB) | sec/iter = {dt:.2f}s")
     except RuntimeError as e:
-        print(f"OOM/RuntimeError with checkpoint: {e}\n")
-        peak_a, dt_a = None, None
-
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats()
-
-    print("--- Baseline: NO checkpoint (for delta reference) ---")
-    try:
-        peak_b, dt_b = profile(use_checkpoint=False)
-        print(f"peak GPU mem = {peak_b:.2f} GiB | sec/iter = {dt_b:.2f}s\n")
-    except RuntimeError as e:
-        print(f"OOM/RuntimeError without checkpoint: {e}\n")
-        peak_b, dt_b = None, None
-
-    print("=" * 60)
-    if peak_a is not None:
-        fits = "FITS" if peak_a < total_gb else "DOES NOT FIT"
-        print(f"Checkpoint path: {peak_a:.2f} GiB -> {fits} on {total_gb:.0f}GB")
-    if peak_a and peak_b:
-        print(f"Memory saved by checkpoint: {peak_b - peak_a:.2f} GiB "
-              f"({100*(peak_b-peak_a)/peak_b:.0f}%)")
-        print(f"Runtime overhead: {100*(dt_a-dt_b)/dt_b:.0f}%")
-    print("=" * 60)
+        print(f"--- {label} ---")
+        print(f"OOM/RuntimeError: {e}")
 
 
 if __name__ == "__main__":
