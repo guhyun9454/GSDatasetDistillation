@@ -54,6 +54,8 @@ NP=${NP:-54}
 IPC=${IPC:-1}
 RES=128
 SEED=${SEED:-0}
+BSZ=$((GPC*10))                    # gaussian.batch_size must match the init chunking
+                                   # (init wrote mixed/batch_0-$((BSZ-1))); gpc=200 -> 2000
 
 # Init produced by init.sbatch (quant path; the distill configs default to init/dm).
 GS_DIR="store/init/quant/imagenet_${SUBSET}_${RES}/ipc${IPC}/GaussianImage_Cholesky_50000_${NP}_${GPC}_fix_alias_bf16"
@@ -75,7 +77,7 @@ if [ "$OBJ" = "DC" ]; then
   python DC/main_DC.py --config-name imagenette \
     subset=$SUBSET gpc=$GPC num_points=$NP \
     batch_real=720 batch_real_micro=128 batch_syn=0 Iteration=5000 eval_it=500 \
-    ipc=$IPC res=$RES model=ConvNetD5 zca=false seed=$SEED \
+    ipc=$IPC res=$RES model=ConvNetD5 zca=false seed=$SEED batch_size=$BSZ \
     ${WANDB:+wandb=true wandb_project=GSDD-DC} \
     gs_dir=$GS_DIR
 elif [ "$OBJ" = "DM" ]; then
@@ -83,7 +85,7 @@ elif [ "$OBJ" = "DM" ]; then
   python DM/main_DM.py --config-name imagenette128 \
     subset=$SUBSET gpc=$GPC num_points=$NP \
     batch_real=1024 batch_syn=0 Iteration=20000 eval_it=2000 \
-    ipc=$IPC res=$RES model=ConvNetD5 zca=false seed=$SEED \
+    ipc=$IPC res=$RES model=ConvNetD5 zca=false seed=$SEED batch_size=$BSZ \
     ${WANDB:+wandb=true wandb_project=GSDD-DM} \
     gs_dir=$GS_DIR
 else
